@@ -1,0 +1,4 @@
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+cloudrun_image = "us-central1-docker.pkg.dev/your-gcp-project-id/technical-test-repo/hello-world-api:latest"
