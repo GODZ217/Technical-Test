@@ -1,0 +1,73 @@
+pipeline {
+    agent any
+
+    environment {
+        PROJECT_ID      = credentials('GCP_PROJECT_ID')
+        REGION          = credentials('REGION')
+        SERVICE_NAME    = credentials('SERVICE_NAME')
+        REPO_NAME       = credentials('ARTIFACT_REPOSITORY')
+        IMAGE_TAG       = "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${SERVICE_NAME}:${BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Authenticate to GCP') {
+            steps {
+                withCredentials([file(credentialsId: 'GCP_SA_KEY', variable: 'SA_KEY')]) {
+                    sh 'gcloud auth activate-service-account --key-file=$SA_KEY'
+                }
+            }
+        }
+
+        stage('Setup gcloud') {
+            steps {
+                sh 'gcloud config set project $PROJECT_ID'
+                sh 'gcloud config set run/region $REGION'
+            }
+        }
+
+        stage('Configure Docker for Artifact Registry') {
+            steps {
+                sh 'gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet'
+            }
+        }
+
+        stage('Build Docker image') {
+            steps {
+                sh 'docker build -t $IMAGE_TAG ./app'
+            }
+        }
+
+        stage('Push to Artifact Registry') {
+            steps {
+                sh 'docker push $IMAGE_TAG'
+            }
+        }
+
+        stage('Deploy to Cloud Run') {
+            steps {
+                sh """
+                    gcloud run deploy $SERVICE_NAME \
+                        --image $IMAGE_TAG \
+                        --region $REGION \
+                        --platform managed \
+                        --allow-unauthenticated
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deploy to Cloud Run succeeded: ${SERVICE_NAME}"
+        }
+        failure {
+            echo "Deploy to Cloud Run failed"
+        }
+    }
+}
